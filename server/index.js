@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import { fetch } from 'undici';
 import path from 'node:path';
-import { setInterval as every } from 'node:timers';
 import { EventEmitter } from 'node:events';
 
 const app = express();
@@ -36,7 +35,7 @@ const headers = {
 const emitter = new EventEmitter();
 
 /* ---- helpers ---- */
-async function fetchNowPlayingFor() {
+async function fetchNowPlaying() {
   const r = await fetch(`${cfg.jfBase}/Sessions?ActiveWithinSeconds=180`, { headers, cache: 'no-store' });
   if (!r.ok) throw new Error(`Jellyfin HTTP ${r.status}`);
   const sessions = await r.json();
@@ -66,7 +65,7 @@ async function fetchNowPlayingFor() {
 
 /* ---- endpoints ---- */
 app.get('/api/nowplaying', async (_req, res) => {
-  try { res.json(await fetchNowPlayingFor()); }
+  try { res.json(await fetchNowPlaying()); }
   catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
@@ -79,11 +78,12 @@ app.get('/api/nowplaying/stream', (req, res) => {
   });
   res.flushHeaders();
   res.write('retry: 1000\n\n');
+  res.write(`data: ${JSON.stringify({ type: 'theme', payload: cfg.theme })}\n\n`);
 
   let last = '';
-  const interval = every(cfg.pollMs, async () => {
+  const interval = setInterval(async () => {
     try {
-      const cur = await fetchNowPlayingFor();
+      const cur = await fetchNowPlaying();
       const serialized = JSON.stringify(cur);
       if (serialized !== last) {
         last = serialized;
@@ -92,7 +92,7 @@ app.get('/api/nowplaying/stream', (req, res) => {
     } catch (e) {
       res.write(`data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`);
     }
-  });
+  }, cfg.pollMs);
 
   const themeListener = (t) => {
     res.write(`data: ${JSON.stringify({ type: 'theme', payload: t })}\n\n`);
