@@ -14,9 +14,7 @@ const cfg = {
   port: parseInt(process.env.PORT || '8080', 10),
   jfBase: process.env.JF_BASE,
   jfToken: process.env.JF_TOKEN,
-  jfUser: (process.env.JF_USER || '').toLowerCase(),
   jfClient: process.env.JF_CLIENT || 'Jellyfin Media Player',
-  jfDevice: process.env.JF_DEVICE || '',
   pollMs: parseInt(process.env.POLL_MS || '1200', 10),
   theme: {
     accent: process.env.THEME_ACCENT || '#ff3b30',
@@ -27,13 +25,27 @@ const cfg = {
   }
 };
 
-const allowed = new Set(
-  (process.env.JF_USERS_ALLOW || '')
-    .split(',')
-    .map(x => x.trim().toLowerCase())
-    .filter(Boolean)
-);
-const signingKey = process.env.OVERLAY_SIGNING_KEY || '';
+const allowed = new Set((process.env.JF_USERS_ALLOW || '')
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+
+function verifySig(user, sig) {
+  const key = process.env.OVERLAY_SIGNING_KEY || '';
+  if (!key) return true;
+  if (!sig) return false;
+  const hex = crypto.createHmac('sha256', key).update(user).digest('hex');
+  return sig === hex || sig === Buffer.from(hex, 'hex').toString('base64');
+}
+
+function pickUser(req) {
+  const user = (req.query.user || '').toLowerCase();
+  const sig = req.query.sig || '';
+  const client = req.query.client || cfg.jfClient;
+  const device = req.query.device || '';
+  if (!user) throw Object.assign(new Error('Missing ?user='), { status: 400 });
+  if (allowed.size && !allowed.has(user)) throw Object.assign(new Error('User not allowed'), { status: 403 });
+  if (!verifySig(user, sig)) throw Object.assign(new Error('Invalid signature'), { status: 403 });
+  return { user, client, device };
+}
 
 const headers = {
   'Authorization': `MediaBrowser Client="StreamJelly", Device="Overlay-Server", DeviceId="streamjelly", Version="0.1", Token="${cfg.jfToken}"`,
@@ -77,30 +89,6 @@ function broadcast(obj) {
   for (const res of clients) res.write(data);
 }
 
-function verifySig(user, sig = '') {
-  if (!signingKey) return true;
-  if (!sig) return false;
-  const mac = crypto.createHmac('sha256', signingKey).update(user).digest();
-  try {
-    const buf = /^[0-9a-f]+$/i.test(sig) ? Buffer.from(sig, 'hex') : Buffer.from(sig, 'base64');
-    return buf.length === mac.length && crypto.timingSafeEqual(buf, mac);
-  } catch {
-    return false;
-  }
-}
-
-function pickUser(req) {
-  const user = String(req.query.user || cfg.jfUser || '').toLowerCase();
-  const client = String(req.query.client || cfg.jfClient);
-  const device = String(req.query.device || cfg.jfDevice);
-
-  if (!user) throw new Error('user required');
-  if (allowed.size && !allowed.has(user)) throw new Error('user not allowed');
-  const sig = req.query.sig;
-  if (!verifySig(user, sig)) throw new Error('bad signature');
-  return { user, client, device };
-}
-
 /* ---- polling & stream ---- */
 
 /* ---- endpoints ---- */
@@ -109,7 +97,7 @@ app.get('/api/nowplaying', async (req, res) => {
     const info = pickUser(req);
     res.json(await fetchNowPlayingFor(info));
   } catch (e) {
-    res.status(400).json({ error: String(e) });
+    res.status(e.status || 500).json({ error: String(e.message || e) });
   }
 });
 
@@ -118,7 +106,7 @@ app.get('/api/nowplaying/stream', (req, res) => {
   try {
     info = pickUser(req);
   } catch (e) {
-    res.status(400).end(String(e));
+    res.status(e.status || 500).end(String(e.message || e));
     return;
   }
 
