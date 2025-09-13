@@ -35,7 +35,7 @@ const headers = {
 const emitter = new EventEmitter();
 
 /* ---- helpers ---- */
-async function fetchNowPlaying() {
+async function fetchNowPlayingFor() {
   const r = await fetch(`${cfg.jfBase}/Sessions?ActiveWithinSeconds=180`, { headers, cache: 'no-store' });
   if (!r.ok) throw new Error(`Jellyfin HTTP ${r.status}`);
   const sessions = await r.json();
@@ -65,7 +65,7 @@ async function fetchNowPlaying() {
 
 /* ---- endpoints ---- */
 app.get('/api/nowplaying', async (_req, res) => {
-  try { res.json(await fetchNowPlaying()); }
+  try { res.json(await fetchNowPlayingFor()); }
   catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
@@ -83,7 +83,7 @@ app.get('/api/nowplaying/stream', (req, res) => {
   let last = '';
   const interval = setInterval(async () => {
     try {
-      const cur = await fetchNowPlaying();
+      const cur = await fetchNowPlayingFor();
       const serialized = JSON.stringify(cur);
       if (serialized !== last) {
         last = serialized;
