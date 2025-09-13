@@ -132,7 +132,21 @@ app.get('/api/nowplaying/stream', (req, res) => {
   res.write('retry: 1000\n\n');
   clients.add(res);
 
+  res.write(`data: ${JSON.stringify({ type: 'theme', payload: cfg.theme })}\n\n`);
+
   let lastPayload = '';
+  fetchNowPlayingFor(info)
+    .then(cur => {
+      const serialized = JSON.stringify({ type: 'nowplaying', payload: cur });
+      lastPayload = serialized;
+      res.write(`data: ${serialized}\n\n`);
+    })
+    .catch(e => {
+      res.write(
+        `data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`
+      );
+    });
+
   const timer = every(cfg.pollMs, async () => {
     try {
       const cur = await fetchNowPlayingFor(info);
@@ -142,7 +156,9 @@ app.get('/api/nowplaying/stream', (req, res) => {
         res.write(`data: ${serialized}\n\n`);
       }
     } catch (e) {
-      res.write(`data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`);
+      res.write(
+        `data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`
+      );
     }
   });
 
