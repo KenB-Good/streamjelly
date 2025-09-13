@@ -38,7 +38,12 @@ THEME_ACCENT2=#ff6b6b
 THEME_ACCENT3=#ff9a8b
 LABEL_NOW=NOW PLAYING
 LABEL_PAUSE=PAUSED
+JF_USERS_ALLOW=kenbee
+OVERLAY_SIGNING_KEY=
 ```
+
+* `JF_USERS_ALLOW` — comma-separated Jellyfin usernames allowed to use the overlay.
+* `OVERLAY_SIGNING_KEY` — optional HMAC key; if set, URLs must include `sig=HMAC_SHA256(user,key)`.
 
 ## How it works
 
