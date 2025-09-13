@@ -3,6 +3,7 @@ import express from 'express';
 import { fetch } from 'undici';
 import path from 'node:path';
 import { setInterval as every } from 'node:timers';
+import { EventEmitter } from 'node:events';
 
 const app = express();
 app.use(express.json());
@@ -32,11 +33,10 @@ const headers = {
   'Accept': 'application/json'
 };
 
-const clients = new Set();
-let lastPayload = null;
+const emitter = new EventEmitter();
 
 /* ---- helpers ---- */
-async function fetchNowPlaying() {
+async function fetchNowPlayingFor() {
   const r = await fetch(`${cfg.jfBase}/Sessions?ActiveWithinSeconds=180`, { headers, cache: 'no-store' });
   if (!r.ok) throw new Error(`Jellyfin HTTP ${r.status}`);
   const sessions = await r.json();
@@ -64,28 +64,9 @@ async function fetchNowPlaying() {
   return { title, artist, artUrl, runtimeSec, positionSec, paused, ts: Date.now() };
 }
 
-function broadcast(obj) {
-  const data = `data: ${JSON.stringify(obj)}\n\n`;
-  for (const res of clients) res.write(data);
-}
-
-/* ---- polling & stream ---- */
-every(cfg.pollMs, async () => {
-  try {
-    const cur = await fetchNowPlaying();
-    const serialized = JSON.stringify(cur);
-    if (serialized !== lastPayload) {
-      lastPayload = serialized;
-      broadcast({ type: 'nowplaying', payload: cur });
-    }
-  } catch (e) {
-    broadcast({ type: 'error', message: e.message });
-  }
-});
-
 /* ---- endpoints ---- */
 app.get('/api/nowplaying', async (_req, res) => {
-  try { res.json(await fetchNowPlaying()); }
+  try { res.json(await fetchNowPlayingFor()); }
   catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
@@ -98,8 +79,30 @@ app.get('/api/nowplaying/stream', (req, res) => {
   });
   res.flushHeaders();
   res.write('retry: 1000\n\n');
-  clients.add(res);
-  req.on('close', () => clients.delete(res));
+
+  let last = '';
+  const interval = every(cfg.pollMs, async () => {
+    try {
+      const cur = await fetchNowPlayingFor();
+      const serialized = JSON.stringify(cur);
+      if (serialized !== last) {
+        last = serialized;
+        res.write(`data: ${JSON.stringify({ type: 'nowplaying', payload: cur })}\n\n`);
+      }
+    } catch (e) {
+      res.write(`data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`);
+    }
+  });
+
+  const themeListener = (t) => {
+    res.write(`data: ${JSON.stringify({ type: 'theme', payload: t })}\n\n`);
+  };
+  emitter.on('theme', themeListener);
+
+  req.on('close', () => {
+    clearInterval(interval);
+    emitter.off('theme', themeListener);
+  });
 });
 
 /* theme config (no auth; recommend gating via Caddy) */
@@ -107,7 +110,7 @@ app.get('/api/config', (_req, res) => res.json(cfg.theme));
 app.put('/api/config', (req, res) => {
   const t = req.body || {};
   cfg.theme = { ...cfg.theme, ...t };
-  broadcast({ type: 'theme', payload: cfg.theme });
+  emitter.emit('theme', cfg.theme);
   res.json(cfg.theme);
 });
 
