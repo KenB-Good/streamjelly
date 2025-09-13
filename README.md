@@ -11,7 +11,8 @@ cp server/.env.example server/.env   # set JF_BASE, JF_TOKEN, JF_USER
 sudo docker compose up -d --build
 ```
 
-OBS Browser Source → http://<server-ip>:8080/overlay
+OBS Browser Source → http://<server-ip>:8080/<your_user>/overlay
+# If SIGN_KEY is set, append ?sig=$(printf <your_user> | openssl dgst -sha256 -hmac "$SIGN_KEY" -binary | xxd -p -c256)
 
 Admin UI → http://<server-ip>:8080/admin
 
@@ -21,7 +22,7 @@ sudo apt-get install -y caddy
 sudo cp caddy/Caddyfile.sample /etc/caddy/Caddyfile
 # edit domain in /etc/caddy/Caddyfile
 sudo systemctl reload caddy
-# Use: https://overlay.yourdomain.tld/overlay in OBS
+# Use: https://overlay.yourdomain.tld/<your_user>/overlay?sig=... in OBS
 ```
 
 ## Env Vars (server/.env)
@@ -29,10 +30,11 @@ sudo systemctl reload caddy
 PORT=8080
 JF_BASE=https://YOUR-JELLYFIN-URL
 JF_TOKEN=YOUR_API_KEY
-JF_USER=your_username
+JF_USER=your_username            # optional; per-user URLs override
 JF_CLIENT=Jellyfin Media Player
 JF_DEVICE=
 POLL_MS=1200
+SIGN_KEY=
 THEME_ACCENT=#ff3b30
 THEME_ACCENT2=#ff6b6b
 THEME_ACCENT3=#ff9a8b
@@ -71,7 +73,7 @@ sudo apt-get install -y caddy
 sudo cp caddy/Caddyfile.sample /etc/caddy/Caddyfile
 # edit overlay.yourdomain.tld -> your domain (DNS must point here)
 sudo systemctl reload caddy
-# OBS URL becomes: https://overlay.yourdomain.tld/overlay
+# OBS URL becomes: https://overlay.yourdomain.tld/<your_user>/overlay?sig=...
 ```
 
 ## License

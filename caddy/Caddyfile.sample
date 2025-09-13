@@ -6,4 +6,6 @@ overlay.yourdomain.tld {
     Cache-Control "no-store"
   }
   reverse_proxy 127.0.0.1:8080
+  # Example OBS URL:
+  #   https://overlay.yourdomain.tld/<user>/overlay?sig=...
 }

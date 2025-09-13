@@ -42,14 +42,15 @@
   function animate(t){ if(!paused && runtimeSec>0){ if(lastT) positionSec+=(t-lastT)/1000; positionSec=Math.min(positionSec,runtimeSec); paint(); } lastT=t; requestAnimationFrame(animate); }
   requestAnimationFrame(animate);
 
+  const qs=location.search||'';
   async function loadTheme(){ try{
-    const t=await (await fetch('/api/config',{cache:'no-store'})).json();
+    const t=await (await fetch('api/config'+qs,{cache:'no-store'})).json();
     document.documentElement.style.setProperty('--accent',t.accent||'#ff3b30');
     document.documentElement.style.setProperty('--accent2',t.accent2||'#ff6b6b');
     document.documentElement.style.setProperty('--accent3',t.accent3||'#ff9a8b');
   }catch{} } loadTheme();
 
-  const es=new EventSource('/api/nowplaying/stream');
+  const es=new EventSource('api/nowplaying/stream'+qs);
   es.onmessage=(e)=>{ try{
     const {type,payload}=JSON.parse(e.data);
     if(type==='nowplaying'){
