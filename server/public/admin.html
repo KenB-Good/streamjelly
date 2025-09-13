@@ -1,0 +1,31 @@
+<!doctype html><meta charset="utf-8" />
+<style>
+  body{font:14px/1.4 system-ui,Segoe UI,Inter;margin:24px;color:#111}
+  label{display:block;margin:8px 0 4px}
+  input[type="text"],input[type="color"]{padding:8px;border:1px solid #ccc;border-radius:8px;width:260px}
+  button{margin-top:12px;padding:10px 14px;border:0;border-radius:10px;background:#111;color:#fff;font-weight:700;cursor:pointer}
+  .row{display:flex;gap:24px;flex-wrap:wrap}
+</style>
+<h2>StreamJelly — Admin</h2>
+<div class="row">
+  <div><label>Accent</label><input id="accent" type="color" value="#ff3b30"></div>
+  <div><label>Accent 2</label><input id="accent2" type="color" value="#ff6b6b"></div>
+  <div><label>Accent 3</label><input id="accent3" type="color" value="#ff9a8b"></div>
+  <div><label>Label (Now)</label><input id="labelNow" type="text" value="NOW PLAYING"></div>
+  <div><label>Label (Paused)</label><input id="labelPause" type="text" value="PAUSED"></div>
+</div>
+<button id="save">Save & Broadcast</button>
+<script>
+  async function load(){ const t=await (await fetch('/api/config',{cache:'no-store'})).json();
+    for (const k of ['accent','accent2','accent3','labelNow','labelPause']) {
+      if (t[k]) document.getElementById(k).value = t[k];
+    }
+  } load();
+
+  document.getElementById('save').onclick = async ()=>{
+    const body = {};
+    for (const k of ['accent','accent2','accent3','labelNow','labelPause']) body[k]=document.getElementById(k).value;
+    await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    alert('Updated!');
+  };
+</script>

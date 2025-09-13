@@ -1,0 +1,11 @@
+services:
+  streamjelly:
+    build: .
+    image: streamjelly:0.1
+    container_name: streamjelly
+    ports: ["8080:8080"]
+    env_file: server/.env
+    restart: unless-stopped
+    volumes:
+      - ./server/public:/app/server/public:ro
+      - ./server/.env:/app/server/.env:ro

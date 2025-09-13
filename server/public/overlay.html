@@ -1,0 +1,72 @@
+<!doctype html><meta charset="utf-8" />
+<style>
+  :root{ --accent:#ff3b30; --accent2:#ff6b6b; --accent3:#ff9a8b;
+         --pad:12px; --radius:14px; --bg:rgba(10,10,10,.55); --text:#fff; --muted:#e7e7e7; --art:72px }
+  html,body{margin:0;padding:0;background:transparent}
+  #wrap{position:fixed;left:24px;bottom:24px;display:flex;align-items:center;gap:12px;
+        padding:var(--pad);border-radius:var(--radius);background:var(--bg);color:var(--text);
+        box-shadow:0 8px 24px rgba(0,0,0,.35),0 0 16px rgba(255,59,48,.25);
+        -webkit-backdrop-filter:saturate(1.2) blur(6px);backdrop-filter:saturate(1.2) blur(6px);
+        font:600 16px/1.2 system-ui,-apple-system,"Segoe UI",Inter,Arial,sans-serif;opacity:0;transition:opacity .25s}
+  #art{width:var(--art);height:var(--art);border-radius:10px;overflow:hidden;background:#222;outline:2px solid rgba(255,59,48,.35);outline-offset:2px}
+  #art img{width:100%;height:100%;object-fit:cover;display:block}
+  #meta{min-width:280px;max-width:620px;display:flex;flex-direction:column;gap:6px}
+  #label{font:800 11px/1 system-ui;letter-spacing:.12em;color:#fff;align-self:flex-start;padding:4px 10px;border-radius:999px;text-transform:uppercase;
+         background:linear-gradient(90deg,var(--accent),var(--accent2));box-shadow:0 2px 12px rgba(255,59,48,.35),inset 0 -1px 0 rgba(0,0,0,.2)}
+  #title{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #artist{font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #bar{position:relative;height:8px;border-radius:6px;background:rgba(255,255,255,.18);overflow:hidden}
+  #fill{position:absolute;inset:0 auto 0 0;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent3));opacity:.95}
+  #time{display:flex;justify-content:space-between;font:600 12px/1 system-ui;color:var(--muted)}
+  #err{position:fixed;left:24px;bottom:calc(24px + var(--art) + 60px);font:12px system-ui;color:#f66;opacity:.9}
+</style>
+<div id="wrap">
+  <div id="art"><img alt=""></div>
+  <div id="meta">
+    <div id="label">NOW PLAYING</div>
+    <div id="title"></div>
+    <div id="artist"></div>
+    <div id="bar"><div id="fill"></div></div>
+    <div id="time"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+  </div>
+</div>
+<div id="err"></div>
+<script>
+  const wrap=document.querySelector('#wrap'), err=document.querySelector('#err');
+  const img=document.querySelector('#art img'), titleEl=document.querySelector('#title'), artistEl=document.querySelector('#artist');
+  const fill=document.querySelector('#fill'), curEl=document.querySelector('#cur'), durEl=document.querySelector('#dur'), labelEl=document.querySelector('#label');
+
+  let runtimeSec=0, positionSec=0, paused=true, lastT=0;
+  const fmt=s=>{s=Math.max(0,Math.floor(s));const m=Math.floor(s/60),n=s%60;return `${m}:${n.toString().padStart(2,'0')}`;}
+  function paint(){ const pct=runtimeSec>0?Math.min(100,(positionSec/runtimeSec)*100):0; fill.style.width=`${pct}%`; curEl.textContent=fmt(positionSec); durEl.textContent=fmt(runtimeSec); }
+  function animate(t){ if(!paused && runtimeSec>0){ if(lastT) positionSec+=(t-lastT)/1000; positionSec=Math.min(positionSec,runtimeSec); paint(); } lastT=t; requestAnimationFrame(animate); }
+  requestAnimationFrame(animate);
+
+  async function loadTheme(){ try{
+    const t=await (await fetch('/api/config',{cache:'no-store'})).json();
+    document.documentElement.style.setProperty('--accent',t.accent||'#ff3b30');
+    document.documentElement.style.setProperty('--accent2',t.accent2||'#ff6b6b');
+    document.documentElement.style.setProperty('--accent3',t.accent3||'#ff9a8b');
+  }catch{} } loadTheme();
+
+  const es=new EventSource('/api/nowplaying/stream');
+  es.onmessage=(e)=>{ try{
+    const {type,payload}=JSON.parse(e.data);
+    if(type==='nowplaying'){
+      if(!payload){ wrap.style.opacity=0; return; }
+      titleEl.textContent=payload.title||'Unknown';
+      artistEl.textContent=payload.artist||'';
+      if(payload.artUrl) img.src=payload.artUrl;
+      runtimeSec=payload.runtimeSec||0; positionSec=payload.positionSec||0; paused=!!payload.paused;
+      labelEl.textContent = paused ? 'PAUSED' : 'NOW PLAYING';
+      paint(); wrap.style.opacity=1; err.textContent='';
+    } else if(type==='theme'){
+      const t=payload||{};
+      if(t.accent)  document.documentElement.style.setProperty('--accent', t.accent);
+      if(t.accent2) document.documentElement.style.setProperty('--accent2', t.accent2);
+      if(t.accent3) document.documentElement.style.setProperty('--accent3', t.accent3);
+      labelEl.textContent = paused ? (t.labelPause||'PAUSED') : (t.labelNow||'NOW PLAYING');
+    }
+  }catch{ err.textContent='Stream parse error'; } };
+  es.onerror=()=>{ err.textContent='Stream disconnected'; wrap.style.opacity=0; };
+</script>

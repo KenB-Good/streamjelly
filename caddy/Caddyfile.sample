@@ -1,0 +1,9 @@
+# Replace with your domain; set DNS A/AAAA to this host first.
+overlay.yourdomain.tld {
+  encode zstd gzip
+  header {
+    # helpful for overlays & SSE
+    Cache-Control "no-store"
+  }
+  reverse_proxy 127.0.0.1:8080
+}
