@@ -1,0 +1,15 @@
+[Unit]
+Description=StreamJelly (Jellyfin Overlay for OBS)
+After=network.target
+
+[Service]
+Type=simple
+Environment=NODE_ENV=production
+WorkingDirectory=/opt/streamjelly/server
+ExecStart=/usr/bin/npm start
+Restart=always
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

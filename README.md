@@ -11,7 +11,8 @@ cp server/.env.example server/.env   # set JF_BASE, JF_TOKEN, JF_USER
 sudo docker compose up -d --build
 ```
 
-OBS Browser Source → http://<server-ip>:8080/overlay  
+OBS Browser Source → http://<server-ip>:8080/overlay
+
 Admin UI → http://<server-ip>:8080/admin
 
 ## Caddy (Auto-TLS)
@@ -42,6 +43,36 @@ LABEL_PAUSE=PAUSED
 ## How it works
 
 Server polls Jellyfin `/Sessions`, broadcasts updates via SSE; the overlay page renders art/title/artist/progress. Secrets never touch OBS.
+
+## Build & Run
+
+### Docker (recommended)
+```bash
+cp server/.env.example server/.env
+# edit server/.env: set JF_BASE, JF_TOKEN, JF_USER
+sudo docker compose up -d --build
+curl -fsSL http://localhost:8080/healthz
+```
+
+### systemd (optional, no Docker)
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs git
+cd server && npm ci && cd ..
+sudo rsync -a . /opt/streamjelly/
+sudo cp systemd/streamjelly.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now streamjelly
+```
+
+### Caddy (preferred reverse proxy)
+```bash
+sudo apt-get install -y caddy
+sudo cp caddy/Caddyfile.sample /etc/caddy/Caddyfile
+# edit overlay.yourdomain.tld -> your domain (DNS must point here)
+sudo systemctl reload caddy
+# OBS URL becomes: https://overlay.yourdomain.tld/overlay
+```
 
 ## License
 
