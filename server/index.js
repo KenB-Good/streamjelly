@@ -3,6 +3,7 @@ import express from 'express';
 import { fetch } from 'undici';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import crypto from 'node:crypto';
 
 const app = express();
 app.use(express.json());
@@ -26,6 +27,14 @@ const cfg = {
   }
 };
 
+const allowed = new Set(
+  (process.env.JF_USERS_ALLOW || '')
+    .split(',')
+    .map(x => x.trim().toLowerCase())
+    .filter(Boolean)
+);
+const signingKey = process.env.OVERLAY_SIGNING_KEY || '';
+
 const headers = {
   'Authorization': `MediaBrowser Client="StreamJelly", Device="Overlay-Server", DeviceId="streamjelly", Version="0.1", Token="${cfg.jfToken}"`,
   'X-MediaBrowser-Token': cfg.jfToken,
@@ -35,14 +44,14 @@ const headers = {
 const emitter = new EventEmitter();
 
 /* ---- helpers ---- */
-async function fetchNowPlayingFor() {
+async function fetchNowPlayingFor({ user, client, device }) {
   const r = await fetch(`${cfg.jfBase}/Sessions?ActiveWithinSeconds=180`, { headers, cache: 'no-store' });
   if (!r.ok) throw new Error(`Jellyfin HTTP ${r.status}`);
   const sessions = await r.json();
   const s = sessions.find(x =>
-    x?.UserName?.toLowerCase() === cfg.jfUser &&
-    x?.Client === cfg.jfClient &&
-    (!cfg.jfDevice || x?.DeviceName === cfg.jfDevice) &&
+    x?.UserName?.toLowerCase() === user &&
+    x?.Client === client &&
+    (!device || x?.DeviceName === device) &&
     x?.NowPlayingItem?.MediaType === 'Audio'
   );
   if (!s) return null;
@@ -63,13 +72,49 @@ async function fetchNowPlayingFor() {
   return { title, artist, artUrl, runtimeSec, positionSec, paused, ts: Date.now() };
 }
 
+function verifySig(user, sig = '') {
+  if (!signingKey) return true;
+  if (!sig) return false;
+  const mac = crypto.createHmac('sha256', signingKey).update(user).digest();
+  try {
+    const buf = /^[0-9a-f]+$/i.test(sig) ? Buffer.from(sig, 'hex') : Buffer.from(sig, 'base64');
+    return buf.length === mac.length && crypto.timingSafeEqual(buf, mac);
+  } catch {
+    return false;
+  }
+}
+
+function pickUser(req) {
+  const user = String(req.query.user || cfg.jfUser || '').toLowerCase();
+  const client = String(req.query.client || cfg.jfClient);
+  const device = String(req.query.device || cfg.jfDevice);
+
+  if (!user) throw new Error('user required');
+  if (allowed.size && !allowed.has(user)) throw new Error('user not allowed');
+  const sig = req.query.sig;
+  if (!verifySig(user, sig)) throw new Error('bad signature');
+  return { user, client, device };
+}
+
 /* ---- endpoints ---- */
-app.get('/api/nowplaying', async (_req, res) => {
-  try { res.json(await fetchNowPlayingFor()); }
-  catch (e) { res.status(500).json({ error: String(e) }); }
+app.get('/api/nowplaying', async (req, res) => {
+  try {
+    const info = pickUser(req);
+    res.json(await fetchNowPlayingFor(info));
+  } catch (e) {
+    res.status(400).json({ error: String(e) });
+  }
 });
 
 app.get('/api/nowplaying/stream', (req, res) => {
+  let info;
+  try {
+    info = pickUser(req);
+  } catch (e) {
+    res.status(400).end(String(e));
+    return;
+  }
+
   res.set({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -83,11 +128,11 @@ app.get('/api/nowplaying/stream', (req, res) => {
   let last = '';
   const interval = setInterval(async () => {
     try {
-      const cur = await fetchNowPlayingFor();
-      const serialized = JSON.stringify(cur);
+      const cur = await fetchNowPlayingFor(info);
+      const serialized = JSON.stringify({ type: 'nowplaying', payload: cur });
       if (serialized !== last) {
         last = serialized;
-        res.write(`data: ${JSON.stringify({ type: 'nowplaying', payload: cur })}\n\n`);
+        res.write(`data: ${serialized}\n\n`);
       }
     } catch (e) {
       res.write(`data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`);
