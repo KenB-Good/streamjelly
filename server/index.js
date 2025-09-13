@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import { fetch } from 'undici';
 import path from 'node:path';
-import { setInterval as every } from 'node:timers';
 import crypto from 'node:crypto';
 
 const app = express();
@@ -53,8 +52,6 @@ const headers = {
   'Accept': 'application/json'
 };
 
-const clients = new Set();
-
 /* ---- helpers ---- */
 async function fetchNowPlayingFor({ user, client, device }) {
   const r = await fetch(`${cfg.jfBase}/Sessions?ActiveWithinSeconds=180`, { headers, cache: 'no-store' });
@@ -84,13 +81,6 @@ async function fetchNowPlayingFor({ user, client, device }) {
   return { title, artist, artUrl, runtimeSec, positionSec, paused, ts: Date.now() };
 }
 
-function broadcast(obj) {
-  const data = `data: ${JSON.stringify(obj)}\n\n`;
-  for (const res of clients) res.write(data);
-}
-
-/* ---- polling & stream ---- */
-
 /* ---- endpoints ---- */
 app.get('/api/nowplaying', async (req, res) => {
   try {
@@ -102,14 +92,9 @@ app.get('/api/nowplaying', async (req, res) => {
 });
 
 app.get('/api/nowplaying/stream', (req, res) => {
-  let info;
-  try {
-    info = pickUser(req);
-  } catch (e) {
-    res.status(e.status || 500).end(String(e.message || e));
-    return;
-  }
-
+  let ctx;
+  try { ctx = pickUser(req); }
+  catch (e) { return res.status(e.status || 500).json({ error: String(e.message || e) }); }
   res.set({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -118,42 +103,20 @@ app.get('/api/nowplaying/stream', (req, res) => {
   });
   res.flushHeaders();
   res.write('retry: 1000\n\n');
-  clients.add(res);
-
-  res.write(`data: ${JSON.stringify({ type: 'theme', payload: cfg.theme })}\n\n`);
-
-  let lastPayload = '';
-  fetchNowPlayingFor(info)
-    .then(cur => {
-      const serialized = JSON.stringify({ type: 'nowplaying', payload: cur });
-      lastPayload = serialized;
-      res.write(`data: ${serialized}\n\n`);
-    })
-    .catch(e => {
-      res.write(
-        `data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`
-      );
-    });
-
-  const timer = every(cfg.pollMs, async () => {
+  let last = '';
+  const timer = setInterval(async () => {
     try {
-      const cur = await fetchNowPlayingFor(info);
-      const serialized = JSON.stringify({ type: 'nowplaying', payload: cur });
-      if (serialized !== lastPayload) {
-        lastPayload = serialized;
-        res.write(`data: ${serialized}\n\n`);
+      const cur = await fetchNowPlayingFor(ctx);
+      const serialized = JSON.stringify(cur);
+      if (serialized !== last) {
+        last = serialized;
+        res.write(`data: ${JSON.stringify({ type:'nowplaying', payload: cur })}\n\n`);
       }
-    } catch (e) {
-      res.write(
-        `data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`
-      );
+    } catch (err) {
+      res.write(`data: ${JSON.stringify({ type:'error', message: String(err) })}\n\n`);
     }
-  });
-
-  req.on('close', () => {
-    clients.delete(res);
-    clearInterval(timer);
-  });
+  }, cfg.pollMs);
+  req.on('close', () => clearInterval(timer));
 });
 
 /* theme config (no auth; recommend gating via Caddy) */
@@ -161,7 +124,6 @@ app.get('/api/config', (_req, res) => res.json(cfg.theme));
 app.put('/api/config', (req, res) => {
   const t = req.body || {};
   cfg.theme = { ...cfg.theme, ...t };
-  broadcast({ type: 'theme', payload: cfg.theme });
   res.json(cfg.theme);
 });
 
