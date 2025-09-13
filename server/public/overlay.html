@@ -50,7 +50,7 @@
     document.documentElement.style.setProperty('--accent3',t.accent3||'#ff9a8b');
   }catch{} } loadTheme();
 
-  const es=new EventSource('/api/nowplaying/stream'+location.search);
+  const es = new EventSource(`/api/nowplaying/stream${location.search}`);
   es.onmessage=(e)=>{ try{
     const {type,payload}=JSON.parse(e.data);
     if(type==='nowplaying'){
