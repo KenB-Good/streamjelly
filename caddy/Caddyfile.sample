@@ -5,5 +5,10 @@ overlay.yourdomain.tld {
     # helpful for overlays & SSE
     Cache-Control "no-store"
   }
+  @admin path /admin*
+  # optional admin gate; create hash with: caddy hash-password --plaintext 'yourpw'
+  basicauth @admin {
+    admin JDJhJDEwJ...   # replace with your hash
+  }
   reverse_proxy 127.0.0.1:8080
 }
