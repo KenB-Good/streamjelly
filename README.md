@@ -4,9 +4,9 @@
 _"New Neon Edition — Your Jellyfin tracks, your OBS overlay."_
 
 ## For StreamJelly community members
-
-In OBS Browser Source, use `https://overlay.weirdducks.site/overlay?user=<yourname>` (width 820, height 220).
-
+In OBS → Browser Source → URL:
+https://overlay.yourdomain.tld/overlay?user=<your-jellyfin-username>[&sig=<signature>]
+Suggested size: Width 820, Height 220. Done.
 Some links may include `&sig=` and should be copied intact.
 
 ## For creators/self-hosters
@@ -34,11 +34,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now streamjelly
 ```
 
-## Why StreamJelly
-
-StreamJelly delivers DMCA-safe, Jellyfin-backed overlays so creators can show now playing info without risking takedowns.
-
-## Caddy (Auto-TLS)
+### Caddy (Auto-TLS)
 ```bash
 sudo apt-get install -y caddy
 sudo cp caddy/Caddyfile.sample /etc/caddy/Caddyfile
@@ -47,7 +43,7 @@ sudo systemctl reload caddy
 # Use: https://overlay.yourdomain.tld/overlay in OBS
 ```
 
-## Env Vars (server/.env)
+### Env Vars (server/.env)
 ```
 PORT=8080
 JF_BASE=https://YOUR-JELLYFIN-URL
@@ -67,6 +63,24 @@ OVERLAY_SIGNING_KEY=
 
 * `JF_USERS_ALLOW` — comma-separated Jellyfin usernames allowed to use `/overlay`.
 * `OVERLAY_SIGNING_KEY` — optional key for URL signatures; if set, `/overlay` and `/api/nowplaying` require `?sig=<hmac>` (`HMAC_SHA256(user,key)`).
+
+### Signed links (optional)
+```bash
+# Generate a signature (hex) for ?user=<name>
+node -e 'const c=require("crypto");const [,,key,u]=process.argv;console.log(c.createHmac("sha256",key).update(u).digest("hex"))' <OVERLAY_SIGNING_KEY> <user>
+```
+
+### Troubleshooting
+```bash
+# Jellyfin reachability (from server)
+curl -H "X-MediaBrowser-Token: $JF_TOKEN" "$JF_BASE/Sessions?ActiveWithinSeconds=180"
+# SSE sanity
+curl -N "http://localhost:8080/api/nowplaying/stream?user=<you>"
+```
+
+## Why StreamJelly
+
+StreamJelly delivers DMCA-safe, Jellyfin-backed overlays so creators can show now playing info without risking takedowns.
 
 ## How it works
 
